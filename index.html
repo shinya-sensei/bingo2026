@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>プロラボ・ビンゴ</title>
+  <style>
+    /* CSSは変更なし（そのまま利用可能） */
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body { font-family: sans-serif; text-align: center; background: #f0f0f0; margin: 0; padding: 10px; color: #333; transition: background-color 0.6s ease; }
+    body.play-mode-bg { background: #fff9c4 !important; }
+    body.bingo-bg { background: #ffebee !important; }
+    h2 { font-size: 1.1rem; margin: 5px 0; }
+    #bingo-banner { display: none; font-size: 2.5rem; font-weight: bold; color: #ff1493; margin: 5px 0; animation: bounce 0.6s infinite alternate; }
+    @keyframes bounce { from { transform: scale(1); } to { transform: scale(1.1); } }
+    #msg { font-size: 13px; color: #666; margin-bottom: 10px; min-height: 1.5em; font-weight: bold; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+    .cell { aspect-ratio: 1/1; background: #ffffff !important; border: 2px solid #ccc; border-radius: 10px; display: flex; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; position: relative; min-height: 95px; padding: 4px; }
+    .cell img { width: 70%; max-height: 55px; object-fit: contain; margin-bottom: 3px; pointer-events: none; }
+    .l-text { font-size: 10px; font-weight: bold; line-height: 1.2; color: #2c3e50; pointer-events: none; }
+    .selected-cell { border: 2px solid #2c3e50; background: #ffffff !important; cursor: pointer; }
+    .selected-cell::after { content: "✕"; position: absolute; top: 2px; right: 4px; font-size: 10px; color: #aaa; }
+    .checked { background: #7f8c8d !important; border-color: #7f8c8d !important; }
+    .checked .l-text, .checked img { filter: grayscale(100%); opacity: 0.3; }
+    .checked::after { content: "✓"; position: absolute; top: 3px; right: 5px; font-size: 16px; color: #fff; z-index: 10; font-weight: bold; }
+    .bingo-cell { border: 4px solid #ff1493 !important; }
+    .bingo-cell .l-text { color: #ff1493 !important; }
+    .reach { border: 3px solid #f39c12 !important; box-shadow: 0 0 8px #f39c12; }
+    select { width: 95%; font-size: 11px; padding: 4px; border: 1px solid #aaa; border-radius: 4px; }
+    #main-btn { width: 100%; padding: 18px; background: #e67e22; color: #fff; border: none; border-radius: 50px; font-size: 1.1rem; font-weight: bold; box-shadow: 0 4px 0 #d35400; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<h2 id="title">ビンゴ作成 (GitHub版)</h2>
+<div id="bingo-banner">BINGO!!</div>
+<div id="msg">読み込み中...</div>
+
+<div class="grid">
+  <div class="cell" id="c0"></div><div class="cell" id="c1"></div><div class="cell" id="c2"></div>
+  <div class="cell" id="c3"></div><div class="cell" id="c4"></div><div class="cell" id="c5"></div>
+  <div class="cell" id="c6"></div><div class="cell" id="c7"></div><div class="cell" id="c8"></div>
+</div>
+
+<button id="main-btn" onclick="goNext()">確定する</button>
+
+<script>
+// --- 設定 ---
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxT8dwXPWeAyOuOzmvIaYOP2i_F0oTmK_LIhzLckWmLsWPXL5CJtJuDfStBPbAtkp_r/exec";
+
+let items = [];
+let boardData = Array(9).fill(null);
+let checked = Array(9).fill(false);
+let isPlayMode = false;
+
+// 起動時にGASからリストを取得
+window.onload = async () => {
+  try {
+    const response = await fetch(GAS_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "getList" })
+    });
+    items = await response.json();
+    document.getElementById('msg').innerText = "商品を9つ選んでね";
+    updateBoardUI();
+  } catch (e) {
+    document.getElementById('msg').innerText = "データの読み込みに失敗しました";
+    console.error(e);
+  }
+};
+
+function updateBoardUI() {
+  for (let i = 0; i < 9; i++) {
+    const cell = document.getElementById('c' + i);
+    cell.innerHTML = '';
+    
+    if (isPlayMode) {
+      if (checked[i]) cell.classList.add('checked');
+      else cell.classList.remove('checked');
+      
+      const imgTag = boardData[i].img ? `<img src="https://drive.google.com/thumbnail?id=${boardData[i].img}&sz=w200">` : '';
+      cell.innerHTML = `${imgTag}<div class="l-text">${boardData[i].l1}</div><div class="l-text">${boardData[i].l2}</div>`;
+      
+      cell.onclick = () => {
+        checked[i] = !checked[i];
+        updateBoardUI();
+        runBingoCheck();
+      };
+    } else {
+      if (boardData[i]) {
+        cell.classList.add('selected-cell');
+        const imgTag = boardData[i].img ? `<img src="https://drive.google.com/thumbnail?id=${boardData[i].img}&sz=w200">` : '';
+        cell.innerHTML = `${imgTag}<div class="l-text">${boardData[i].l1}</div><div class="l-text">${boardData[i].l2}</div>`;
+        cell.onclick = () => {
+          boardData[i] = null;
+          cell.classList.remove('selected-cell');
+          updateBoardUI();
+        };
+      } else {
+        cell.classList.remove('selected-cell');
+        const sel = document.createElement('select');
+        sel.innerHTML = '<option value="">選択▼</option>';
+        const pickedIds = boardData.filter(x => x).map(x => x.id);
+        items.forEach(it => {
+          if (!pickedIds.includes(it.id)) {
+            const opt = document.createElement('option');
+            opt.value = it.id; opt.text = it.id; sel.add(opt);
+          }
+        });
+        sel.onchange = (e) => {
+          const found = items.find(it => it.id === e.target.value);
+          if (found) { boardData[i] = found; updateBoardUI(); }
+        };
+        cell.appendChild(sel);
+        cell.onclick = null;
+      }
+    }
+  }
+}
+
+function goNext() {
+  if (boardData.includes(null)) {
+    document.getElementById('msg').innerHTML = '<span style="color:red">9つすべて選んでください！</span>';
+    return;
+  }
+  isPlayMode = true;
+  document.body.classList.add('play-mode-bg');
+  document.getElementById('title').innerText = "ビンゴ大会スタート！";
+  document.getElementById('msg').innerText = "当たったマスをタップ！";
+  document.getElementById('main-btn').style.display = "none";
+  updateBoardUI();
+}
+
+function runBingoCheck() {
+  const patterns = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  let isBingo = false;
+  
+  for(let i=0; i<9; i++) {
+    document.getElementById('c'+i).classList.remove('bingo-cell', 'reach');
+  }
+
+  patterns.forEach(p => {
+    const matchCount = p.filter(idx => checked[idx]).length;
+    if (matchCount === 3) {
+      isBingo = true;
+      p.forEach(idx => document.getElementById('c'+idx).classList.add('bingo-cell'));
+    } else if (matchCount === 2) {
+      p.forEach(idx => { if(!checked[idx]) document.getElementById('c'+idx).classList.add('reach'); });
+    }
+  });
+
+  const banner = document.getElementById('bingo-banner');
+  if (isBingo) {
+    document.body.classList.remove('play-mode-bg');
+    document.body.classList.add('bingo-bg');
+    banner.style.display = 'block';
+  } else {
+    document.body.classList.remove('bingo-bg');
+    if (isPlayMode) document.body.classList.add('play-mode-bg');
+    banner.style.display = 'none';
+  }
+}
+</script>
+</body>
+</html>
